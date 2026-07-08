@@ -4,7 +4,7 @@ mod handlers;
 //This is the health fn here 
 use actix_web::{App, HttpResponse, HttpServer, get, web};
 
-use crate::{db::get_db, handlers::{add_books, delete_books, get_books, update_books},};
+use crate::{db::get_db, handlers::{add_books, delete_books, get_books, patch_books, update_books},};
 
 #[get("/health")]
 async fn health()->HttpResponse{
@@ -25,6 +25,7 @@ async fn main ()->std::io::Result<()>{
         .service(add_books)
         .service(delete_books)
         .service(update_books)
+        .service(patch_books)
     })
     .bind(("127.0.0.1",8080))?
     .run()

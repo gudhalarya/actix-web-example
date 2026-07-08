@@ -3,8 +3,9 @@
 //2. Add books ---------- Post (Done)
 //3. delete books ------delete {id} (Done)
 //4. update book complete update ---- put {id} (Done)
-//5. update is done partially --------patch {id}
+//5. update is done partially --------patch {id} (Done)
 //6. search by name or author ------ get 
+
 use serde::{Deserialize,Serialize};
 
 //This is where the models lie 
@@ -29,9 +30,14 @@ pub struct UpdateBooks{
     author:String
 }
 
+#[derive(Deserialize)]
+struct PatchBooks{
+    name:Option<String>,
+    author:Option<String>
+}
 
 //This is where the first get fn is written 
-use actix_web::{HttpResponse, delete, get, post, put, web};
+use actix_web::{HttpResponse, delete, get, patch, post, put, web};
 use sqlx::PgPool;
 
 use crate::error::{AppError, AppResponse};
@@ -106,6 +112,29 @@ pub async fn update_books(
     match result {
         Some(book) => Ok(HttpResponse::Ok().json(book)),
         None => Err(AppError::NotFound),
+    }
+}
+
+//This is for the patch fn 
+#[patch("/patch_books/{id}")]
+pub async fn patch_books(pool:web::Data<PgPool>,payload:web::Json<PatchBooks>,id:web::Path<i32>)->AppResponse<HttpResponse>{
+    let sql = "
+        UPDATE books 
+        SET 
+            name = COALESCE($1, name), 
+            author = COALESCE($2, author) 
+        WHERE id = $3 
+        RETURNING *";
+        let result = sqlx::query_as::<_,GetBooks>(sql)
+        .bind(&payload.name)
+        .bind(&payload.author)
+        .bind(*id)
+        .fetch_optional(pool.get_ref())
+        .await?;
+
+    match result{
+        Some(book)=>Ok(HttpResponse::Ok().json(book)),
+        None=>Err(AppError::NotFound)
     }
 }
 
