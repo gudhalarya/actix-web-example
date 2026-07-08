@@ -11,7 +11,10 @@ pub enum AppError{
     DatabaseError(#[from]sqlx::Error),
 
     #[error("Not found")]
-    NotFound
+    NotFound,
+
+    #[error("{0}")]
+    BadRequest(String),
 }
 
 #[derive(Serialize)]
@@ -23,7 +26,8 @@ impl ResponseError for AppError{
     fn status_code(&self) -> actix_web::http::StatusCode {
         match self{
             AppError::DatabaseError(_)=>StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::NotFound=>StatusCode::NOT_FOUND
+            AppError::NotFound=>StatusCode::NOT_FOUND,
+            AppError::BadRequest(_)=>StatusCode::BAD_REQUEST
         }
     }
 
