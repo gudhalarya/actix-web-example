@@ -15,6 +15,9 @@ pub enum AppError{
 
     #[error("{0}")]
     BadRequest(String),
+
+    #[error("{0}")]
+    Conflict(String)
 }
 
 #[derive(Serialize)]
@@ -27,14 +30,15 @@ impl ResponseError for AppError{
         match self{
             AppError::DatabaseError(_)=>StatusCode::INTERNAL_SERVER_ERROR,
             AppError::NotFound=>StatusCode::NOT_FOUND,
-            AppError::BadRequest(_)=>StatusCode::BAD_REQUEST
+            AppError::BadRequest(_)=>StatusCode::BAD_REQUEST,
+            AppError::Conflict(_)=>StatusCode::CONFLICT
         }
     }
 
 
     fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
         if matches!(self,AppError::DatabaseError(_)){
-            tracing::error!("Internal database error ");
+            tracing::error!(error = %self,"internal error");
         }
         HttpResponse::build(self.status_code()).json(ErrorBody{error:self.to_string(),
         })
