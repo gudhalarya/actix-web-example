@@ -4,10 +4,11 @@ mod handlers;
 //This is the health fn here 
 use actix_web::{App, HttpResponse, HttpServer, get, web};
 
-use crate::{db::get_db, handlers::{add_books, get_books}};
+use crate::{db::get_db, handlers::{add_books, delete_books, get_books, update_books},};
+
 #[get("/health")]
 async fn health()->HttpResponse{
-    return HttpResponse::Ok().json(serde_json::json!({"status":"ok"}));
+    return HttpResponse::Ok().json(serde_json::json!({"status":"Noice status dude "}));
 }
 
 #[actix_web::main]
@@ -22,6 +23,8 @@ async fn main ()->std::io::Result<()>{
         .service(health)
         .service(get_books)
         .service(add_books)
+        .service(delete_books)
+        .service(update_books)
     })
     .bind(("127.0.0.1",8080))?
     .run()
