@@ -4,7 +4,6 @@
 //3. delete books ------delete {id} (Done)
 //4. update book complete update ---- put {id} (Done)
 //5. update is done partially --------patch {id} (Done)
-//6. search by name or author ------ get 
 
 use serde::{Deserialize,Serialize};
 
@@ -106,7 +105,7 @@ pub async fn update_books(
         .bind(&payload.name)
         .bind(&payload.author)
         .bind(*id)
-        .fetch_optional(pool.get_ref()) // fetch_optional returns None if no rows match
+        .fetch_optional(pool.get_ref()) 
         .await?;
 
     match result {
@@ -117,24 +116,30 @@ pub async fn update_books(
 
 //This is for the patch fn 
 #[patch("/patch_books/{id}")]
-pub async fn patch_books(pool:web::Data<PgPool>,payload:web::Json<PatchBooks>,id:web::Path<i32>)->AppResponse<HttpResponse>{
+pub async fn patch_book(
+    pool: web::Data<PgPool>,
+    id: web::Path<i32>,
+    payload: web::Json<PatchBooks>,
+) -> AppResponse<HttpResponse> {
+    
     let sql = "
         UPDATE books 
         SET 
             name = COALESCE($1, name), 
             author = COALESCE($2, author) 
         WHERE id = $3 
-        RETURNING *";
-        let result = sqlx::query_as::<_,GetBooks>(sql)
-        .bind(&payload.name)
-        .bind(&payload.author)
+        RETURNING id, name, author, date";
+
+    let result = sqlx::query_as::<_, GetBooks>(sql)
+        .bind(&payload.name)   // Option safely maps to NULL or value
+        .bind(&payload.author) // Option safely maps to NULL or value
         .bind(*id)
         .fetch_optional(pool.get_ref())
         .await?;
 
-    match result{
-        Some(book)=>Ok(HttpResponse::Ok().json(book)),
-        None=>Err(AppError::NotFound)
+    match result {
+        Some(book) => Ok(HttpResponse::Ok().json(book)),
+        None => Err(AppError::NotFound),
     }
 }
 
