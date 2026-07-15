@@ -1,6 +1,4 @@
-use std::io::Error;
-
-use actix_web::{HttpResponse, post, web};
+use actix_web::{HttpResponse, get, post, web};
 use anyhow::Context;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::{SaltString,rand_core::OsRng}};
 
@@ -40,15 +38,60 @@ pub fn verify_password(password:&str,hash:&str)->AppResponse<()>{
 }
 
 
-//This is the main auth route here 
+//This is for the register of the users 
 #[post("/register")]
 pub async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppResponse<HttpResponse>{
-    let sql = "INSERT  INTO users (name,email,password) VALUES ($1,$2,$3)";
-    let pass = hash_password(&payload.password)?;
-    let result = sqlx::query(sql).bind(&payload.name).bind(&payload.email).bind(&pass).execute(pool.get_ref()).await;
-    match result{
-        Ok(_)=>Ok(HttpResponse::Created().json(serde_json::json!({"Message":"Created successfully"}))),
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() =>{Err(AppError::Conflict("Email already registered".into()))}
-        Err(e)=>Err(anyhow::Error::new(e).into()),
-    }
+    let sql = "INSERT INTO users (name,email,password) VALUES ($1,$2,$3)";
+    let hash = hash_password(&payload.password)?;
+    let result = sqlx::query(sql).bind(&payload.name)
+    .bind(&payload.email)
+    .bind(hash)
+    .execute(pool.get_ref())
+    .await;
+
+    if let Err(err) =result{
+        if err.as_database_error().map_or(false, |e|e.is_unique_violation()){
+            return Err(AppError::Conflict("An account with this email already exist".to_string()));
+        }
+        return Err(AppError::InternalError(anyhow::Error::from(err).context("Could not register user")));
+    } 
+
+    Ok(HttpResponse::Created().json(serde_json::json!({"Ok":"User created successfully"})))
+}
+
+
+//This is the login route
+#[derive(sqlx::FromRow)]
+struct UserRow {
+    id: i32,
+    name: String,
+    email: String,
+    password: String,
+}
+
+#[post("/login")]
+pub async fn login(
+    pool: web::Data<PgPool>,
+    payload: web::Json<Login>,
+) -> AppResponse<HttpResponse> {
+    let user: Option<UserRow> = sqlx::query_as("SELECT id, name, email, password FROM users WHERE email = $1")
+        .bind(&payload.email)
+        .fetch_optional(pool.get_ref())
+        .await
+        .context("Database error during login validation")?;
+
+    let user = match user {
+        Some(u) => u,
+        None => return Err(AppError::Unauthorized),
+    };
+
+    let password = payload.password.clone();
+    let stored_hash = user.password.clone();
+
+   verify_password(&password, &stored_hash)?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": "Logged in successfully"
+    })))
 }
