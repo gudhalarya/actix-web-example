@@ -3,6 +3,7 @@ use std::env;
 
 use actix_web::{App, HttpResponse, HttpServer, get, web};
 use sqlx::{PgPool, postgres::PgPoolOptions};
+mod models;
 
 //This is where the whole code will be written
 //first we will connect to the database 
