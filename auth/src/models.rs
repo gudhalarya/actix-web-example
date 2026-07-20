@@ -3,15 +3,15 @@ use serde::{Deserialize,Serialize};
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct Register{
-    name:String,
-    email:String,
-    pwd:String
+   pub name:String,
+   pub email:String,
+   pub pwd:String
 }
 
 #[derive(Debug,Serialize,Deserialize)]
 pub struct Login{
-    email:String,
-    pwd:String
+   pub email:String,
+   pub pwd:String
 }
 
 

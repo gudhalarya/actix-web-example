@@ -7,6 +7,8 @@ use crate::db::get_db;
 mod db;
 mod models;
 mod error;
+mod routes;
+mod helper;
 
 //This is a common fn to check the health of the system 
 #[get("/health")]
