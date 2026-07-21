@@ -3,3 +3,4 @@ advanced-crud/.env
 blog/target
 blog/.env
 auth/target
+adv-auth/target

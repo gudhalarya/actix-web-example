@@ -1,7 +1,6 @@
 //This is the shit where we will cook up the main routes of everything 
 
 use actix_web::{HttpResponse, post, web};
-use anyhow::Context;
 use sqlx::PgPool;
 
 use crate::{error::{AppError, AppResponse}, helper::hash_password, models::Register};
