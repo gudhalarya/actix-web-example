@@ -2,6 +2,7 @@
 //The first thing we will do is the connection to the database 
 mod db;
 mod error;
+mod auth;
 use actix_web::{App, HttpResponse, HttpServer, post, web};
 
 use crate::db::get_db;
