@@ -1,41 +1,43 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
-//This is the errors file that will hold the custom errors we will write 
+use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum AppError {
-    #[error( "Internal Server error occurred ")]
-    InternalServerError(#[from]anyhow::Error),
+    #[error("Internal server error")]
+    InternalServerError(#[from] anyhow::Error),
 
-    #[error("Not Found")]
+    #[error("Not found")]
     NotFound,
 
     #[error("Unauthorized")]
-    Unauthorized
+    Unauthorized,
 }
 
-use serde::Serialize;
-#[derive(Debug,Serialize)]
-pub struct ErrorResponse{
-    error:String
+#[derive(Serialize)]
+pub struct ErrorBody {
+    error: String,
 }
 
-impl ResponseError for AppError{
+impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
-        match self{
-            AppError::InternalServerError(_)=>StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Unauthorized=>StatusCode::UNAUTHORIZED,
-            AppError::NotFound=>StatusCode::NOT_FOUND
+        match self {
+            AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::NotFound => StatusCode::NOT_FOUND,
+            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
         }
     }
 
-    fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
-        if let AppError::InternalServerError(err) =self{
-            tracing::error!("Internal error : {:?}",err);
-        } 
-        HttpResponse::build(self.status_code()).json(ErrorResponse{error:self.to_string(),
-        })
+    fn error_response(&self) -> HttpResponse {
+        if matches!(self, AppError::InternalServerError(_)) {
+            tracing::error!(error = %self, "Internal server error");
+        }
+
+        HttpResponse::build(self.status_code())
+            .json(ErrorBody {
+                error: self.to_string(),
+            })
     }
 }
 
-pub type AppResult<T> = Result<T,AppError>;
+pub type AppResponse<T> = Result<T, AppError>;
