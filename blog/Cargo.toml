@@ -9,6 +9,7 @@ anyhow = "1.0.104"
 argon2 = { version = "0.5.3", features = ["rand"] }
 chrono = "0.4.45"
 dotenvy = "0.15.7"
+futures-util = "0.3.33"
 jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 redis = "1.5.0"

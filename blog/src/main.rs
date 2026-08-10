@@ -11,6 +11,7 @@ mod error;
 use actix_web::{App, HttpResponse, HttpServer, post, web};
 use anyhow::Context;
 mod auth;
+mod extractor;
 
 use crate::{auth::{login, register}, db::get_db};
 #[post("/what")]
