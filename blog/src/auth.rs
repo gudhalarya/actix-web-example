@@ -1,13 +1,15 @@
-use std::rc::Weak;
+use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
 use actix_web::{HttpResponse, http::KeepAlive::Os, post, web};
 use anyhow::Context;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use jsonwebtoken::{EncodingKey, Header, encode};
 //This is the file for the auth of the projects 
 //Models are the first thing we will do 
 use serde::{Deserialize,Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResponse}; 
 #[derive(Debug,Deserialize)]
@@ -22,6 +24,13 @@ pub struct Login{
     email:String, 
     password:String
 }
+
+#[derive(Debug,Deserialize,Serialize)]
+pub struct ClaimsZ{
+    pub sub:String,
+    pub exp:usize
+}
+
 //--------------------------------------------------------------------//
 //These are the helper fn here 
 pub fn hash_pass(password:&str)->AppResponse<String>{
@@ -54,5 +63,17 @@ async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse<Htt
 
     let argon = Argon2::default() ; 
     argon.verify_password(payload.password.as_bytes(), &password_hash).map_err(|_|crate::error::AppError::Unauthorized)? ;
-    Ok(HttpResponse::Ok().json(serde_json::json!({"Ok":"User is verified"})))
+    let expiration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()+60*60; 
+
+    let user_id:Uuid = user.try_get("id").context("Could not get the user id ")? ; 
+    let claims = ClaimsZ{
+        sub:user_id.to_string(),
+        exp:expiration as usize,
+    }; 
+    let secret = env::var("JWT_SECRET").context("Could not find the jwt secret in the file ")? ; 
+    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()),).map_err(|e|anyhow::anyhow!("Could not create jwt : {}",e))? ; 
+
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({"token":token})))
 }
+
