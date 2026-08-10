@@ -1,8 +1,8 @@
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{HttpResponse, http::KeepAlive::Os, post, web};
+use actix_web::{HttpResponse, post, web};
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::{SaltString,rand_core::OsRng}};
 use jsonwebtoken::{EncodingKey, Header, encode};
 //This is the file for the auth of the projects 
 //Models are the first thing we will do 
@@ -45,7 +45,7 @@ pub fn hash_pass(password:&str)->AppResponse<String>{
 
 //This is the login route 
 #[post("/register")]
-async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppResponse<HttpResponse>{
+pub async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppResponse<HttpResponse>{
     let passwrd = hash_pass(&payload.password)?; 
     let sql = "INSERT INTO users(name,email,pass) VALUES ($1,$2,$3)"; 
     sqlx::query(sql).bind(&payload.name).bind(&payload.email).bind(passwrd).execute(pool.get_ref()).await.context("Could not register the user")?;
@@ -55,7 +55,7 @@ async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppRespon
 
 //This is the login fn here
 #[post("/login")]
-async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse<HttpResponse>{
+pub async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse<HttpResponse>{
     let user = sqlx::query(r#"SELECT id,name,email,pass FROM users WHERE email = $1"#).bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not find the user in the database")?.ok_or(AppError::Unauthorized)?;
     let password_hash :String = user.try_get("pass").context("Could not find the hashed password")? ; 
     let password_hash = PasswordHash::new(&password_hash).map_err(|e|anyhow::anyhow!("Invalid password or user id {}",e))?; 

@@ -29,8 +29,12 @@ impl ResponseError for AppError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        if matches!(self, AppError::InternalServerError(_)) {
-            tracing::error!(error = %self, "Internal server error");
+        if let AppError::InternalServerError(err) = self {
+        tracing::error!(
+            error = %err,
+            debug = ?err,
+            "Internal server error"
+        );
         }
 
         HttpResponse::build(self.status_code())
