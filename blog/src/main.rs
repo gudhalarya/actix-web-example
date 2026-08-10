@@ -9,10 +9,11 @@ Fourth what we will do is to make the custom errors (most important)
 mod db;
 mod error;
 use actix_web::{App, HttpResponse, HttpServer, post, web};
+mod auth;
 
 use crate::db::get_db;
 #[post("/what")]
-async fn what()->HttpResponse{
+async fn health()->HttpResponse{
     HttpResponse::Ok().json(serde_json::json!({"Ok":"Status is ok "}))
 }
 
@@ -25,7 +26,7 @@ async fn main ()->std::io::Result<()>{
         App::new()
         .wrap(actix_web::middleware::Logger::default())
         .app_data(web::Data::new(pool.clone()))
-        .service(what)
+        .service(health)
     })
     .bind(("127.0.0.1",8080))?
     .run()
