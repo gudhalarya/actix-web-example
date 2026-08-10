@@ -1,6 +1,6 @@
-use std::{env, time::{SystemTime, UNIX_EPOCH}};
+use std::{env, future::{Ready, ready}, time::{SystemTime, UNIX_EPOCH}};
 
-use actix_web::{HttpResponse, post, web};
+use actix_web::{FromRequest, HttpResponse, error::{ErrorInternalServerError, ErrorUnauthorized}, post, web};
 use anyhow::Context;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::{SaltString,rand_core::OsRng}};
 use jsonwebtoken::{EncodingKey, Header, encode};
@@ -31,6 +31,10 @@ pub struct ClaimsZ{
     pub exp:usize
 }
 
+
+pub struct AuthUser{
+    pub user_id:Uuid,
+}
 //--------------------------------------------------------------------//
 //These are the helper fn here 
 pub fn hash_pass(password:&str)->AppResponse<String>{
@@ -77,3 +81,41 @@ pub async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse
     Ok(HttpResponse::Ok().json(serde_json::json!({"token":token})))
 }
 
+//-----------------------------------------------------This is the extractor-----------------------------------------------//
+
+impl FromRequest for AuthUser {
+    type Error = actix_web::Error; 
+    type Future =  Ready<Result<Self,Self::Error>>;
+
+    fn from_request(req: &actix_web::HttpRequest, payload: &mut actix_web::dev::Payload) -> Self::Future {
+        let auth_header = match req.headers().get("Authorization"){
+            Some(header)=>header,
+            None=>{
+                return ready(Err(ErrorUnauthorized("Missing auth headers")));
+            }
+        };
+
+
+        let auth_header = match auth_header.to_str() {
+            Ok(value)=>value,
+            Err(_)=>{
+                return ready(Err(ErrorUnauthorized("Invalid Authorization header")))
+            }
+        };
+        let token = match auth_header.strip_prefix("Bearer"){
+            Some(token)=>token,
+            None=>{
+                return ready(Err(ErrorUnauthorized("Invalid Authorization error")));
+            }
+        };
+        let secret = match env::var("JWT_SECRET"){
+            Ok(secret)=>secret, 
+            Err(_)=>{
+                return ready(Err(ErrorInternalServerError("JWT is not configued")));
+            }
+        };
+    }
+
+
+
+}
