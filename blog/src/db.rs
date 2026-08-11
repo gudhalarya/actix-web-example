@@ -1,6 +1,7 @@
 //This is the database file here 
 use std::env;
 
+use redis::Client;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub async fn get_db()->PgPool{
@@ -13,4 +14,10 @@ pub async fn get_db()->PgPool{
     .await.expect("COuld not connect to the database"); 
 
     pool
+}
+
+//This is for the redis connection dude
+pub fn redis()->Client{
+    let url = env::var("REDIS_URL").expect("Cou;d not find teh redis url in the env file"); 
+    Client::open(url).expect("Could not establish the connection")
 }
