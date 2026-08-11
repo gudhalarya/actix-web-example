@@ -5,13 +5,19 @@ We will need two routes here
 3. Modles ( Both) 
 4. Claims For JWT 
 */
+use actix_web::{
+    dev::Payload, 
+    FromRequest, 
+    HttpRequest,
+};
+use futures_util::future::{Ready, ready};
 
-use std::{env, rc::Weak, time::{SystemTime, UNIX_EPOCH}};
+use std::{env,time::{SystemTime, UNIX_EPOCH}};
 
 use actix_web::{HttpResponse, post, web};
 use anyhow::Context;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
-use jsonwebtoken::{EncodingKey, Header, encode};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use rand_core::OsRng;
 use serde::{Deserialize,Serialize};
 use sqlx::{PgPool, Row};
@@ -35,6 +41,11 @@ pub struct Login{
 pub struct Claims{
     pub sub:String,
     pub exp:usize
+}
+
+//This is teh struct for the auth user here 
+pub struct AuthUser{
+    pub user_id:Uuid
 }
 //This is the register route i have made the hash password inside the same fn 
 #[post("/register")]
@@ -72,5 +83,47 @@ pub async fn login(pool:web::Data<PgPool>, payload:web::Json<Login>)->AppRespons
     let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()),).context("Could not create the proper token")? ; 
 
     Ok(HttpResponse::Ok().json(serde_json::json!({"Token":token})))
+}
 
+//This is the extractor here -------------> 
+impl FromRequest for AuthUser{
+    type Error = AppError;
+    type Future = Ready<Result<Self,Self::Error>>;
+    
+
+    fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
+        let auth_header = match req.headers().get("Authorization"){
+            Some(header)=>header, 
+            None=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        }; 
+
+        let auth_header = match auth_header.to_str(){
+            Ok(value)=>value, 
+            Err(_)=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        }; 
+
+        let token = match auth_header.strip_prefix("Bearer"){
+            Some(token)=>token, 
+            None=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        }; 
+
+        let secret = env::var("JWT_SECRET").expect("Could not find the jwt key in the config");
+        let token_data = match decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &Validation::default()){
+            Ok(data)=>data, 
+            Err(_)=>return ready(Err(AppError::Unauthorized))
+        }; 
+        let user_id = match Uuid::parse_str(&token_data.claims.sub){
+            Ok(id)=>id, 
+            Err(_)=>{
+            return ready(Err(AppError::Unauthorized));
+        }
+    };
+    ready(Ok(AuthUser { user_id }))
+    }
 }
