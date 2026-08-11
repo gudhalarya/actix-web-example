@@ -12,6 +12,9 @@ pub enum AppError {
 
     #[error("Unauthorized")]
     Unauthorized,
+
+    #[error("ALready exist")]
+    AlreadyExist
 }
 
 #[derive(Serialize)]
@@ -25,6 +28,7 @@ impl ResponseError for AppError {
             AppError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::AlreadyExist=>StatusCode::CONFLICT
         }
     }
 
