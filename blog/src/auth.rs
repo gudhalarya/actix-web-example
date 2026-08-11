@@ -6,12 +6,16 @@ We will need two routes here
 4. Claims For JWT 
 */
 
-use std::rc::Weak;
+use std::{env, rc::Weak, time::{SystemTime, UNIX_EPOCH}};
 
 use actix_web::{HttpResponse, post, web};
 use anyhow::Context;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use jsonwebtoken::{EncodingKey, Header, encode};
+use rand_core::OsRng;
 use serde::{Deserialize,Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResponse}; 
 #[derive(Debug,Deserialize,Serialize)]
@@ -21,26 +25,52 @@ pub struct Register{
     pub pass:String,
 }
 
-#[derive(Debug,Serialize)]
+#[derive(Debug,Serialize,Deserialize)]
 pub struct Login{
     email:String, 
     password:String,
 }
 
+#[derive(Debug,Serialize,Deserialize)]
 pub struct Claims{
-    sub:String,
-    exp:usize
+    pub sub:String,
+    pub exp:usize
 }
-
+//This is the register route i have made the hash password inside the same fn 
 #[post("/register")]
 pub async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppResponse<HttpResponse>{
-    let sql = "INSERT INTO users (name,email,pass) VALUES ($!,$2,$3)"; 
+    let sql = "INSERT INTO users (name,email,pass) VALUES ($1,$2,$3)"; 
     let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the result ")?; 
     if check.is_some(){
         return Err(AppError::AlreadyExist);
     }
+    let argon2 = Argon2::default(); 
+    let salt = SaltString::generate(&mut OsRng); 
+    let hashed_pass = argon2.hash_password(&payload.pass.as_bytes(), &salt).map_err(|err|anyhow::anyhow!("Could not hash the password: {}",err))?.to_string();
 
-    let result = sqlx::query(sql).bind(&payload.name).bind(&payload.email).bind(&payload.pass).execute(pool.get_ref()).await.context("Cant add users ")? ; 
+    sqlx::query(sql).bind(&payload.name).bind(&payload.email).bind(&hashed_pass).execute(pool.get_ref()).await.context("Cant add users ")? ; 
     Ok(HttpResponse::Created().json(serde_json::json!({"OK":"User created successfully"})))
+
+}
+
+//This is the login route here dude 
+#[post("/login")]
+pub async fn login(pool:web::Data<PgPool>, payload:web::Json<Login>)->AppResponse<HttpResponse>{
+    let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users from the database")? ; 
+    let user = check.ok_or((AppError::NotFound))? ; 
+    let stored_hash :String = user.get("pass"); 
+    let parsed_hash = PasswordHash::new(&stored_hash).map_err(|_|AppError::Unauthorized)? ;
+    Argon2::default().verify_password(&payload.password.as_bytes(), &parsed_hash).map_err(|_|AppError::Unauthorized)? ; 
+    //Till now we have checked the password only now we will add the jwt in it 
+    let user_id :Uuid= user.get("id"); 
+    let exp = SystemTime::now().duration_since(UNIX_EPOCH).context("Could not create the proper expiration time ")?.as_secs() + 60*60; 
+    let claims = Claims{
+        sub : user_id.to_string(), 
+        exp : exp as usize,
+    }; 
+    let secret = env::var("JWT_SECRET").expect("Could not find teh jwt key"); 
+    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()),).context("Could not create the proper token")? ; 
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({"Token":token})))
 
 }
