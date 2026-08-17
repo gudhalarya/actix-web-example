@@ -14,7 +14,7 @@ use actix_web::{App, HttpResponse, HttpServer, post, web};
 use anyhow::Context;
 mod auth;
 
-use crate::{auth::{login, register, test_redis}, db::{get_db, redis}};
+use crate::{auth::{login, register}, db::{get_db, redis}};
 
 #[post("/what")]
 async fn health()->HttpResponse{
@@ -39,7 +39,6 @@ async fn main ()->std::io::Result<()>{
         .service(health)
         .service(login)
         .service(register)
-        .service(test_redis)
         
     })
     .bind(("127.0.0.1",8080))?
