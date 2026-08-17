@@ -1,3 +1,5 @@
+use std::env;
+
 use actix_web::{HttpResponse, post, web};
 use anyhow::Context;
 use argon2::Argon2;
@@ -5,9 +7,13 @@ use argon2::PasswordHash;
 use argon2::PasswordHasher;
 use argon2::PasswordVerifier;
 use argon2::password_hash::SaltString;
+use chrono::Duration;
+use chrono::Utc;
+use jsonwebtoken::EncodingKey;
+use jsonwebtoken::Header;
+use jsonwebtoken::encode;
 use rand_core::OsRng;
 
-use redis::Arg;
 /*This is the file for the auth stufff dude 
 1. Models  + Compelete routes will be stored here 
 2. Hashing + verification will be done in the same file Algo which will be used is ( ARGON2 )
@@ -35,6 +41,12 @@ pub struct Login{
     password:String
 }
 
+//This is the jwt struct here
+#[derive(Debug,Deserialize,Serialize,sqlx::FromRow)]
+pub struct Claims{
+    sub:String,
+    exp:usize
+}
 
 //Routes start here first the register 
 #[post("/register")]
@@ -58,12 +70,20 @@ pub async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppRe
 #[post("/login")]
 pub async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse<HttpResponse>{
     //first checking wether the user actually does exist or not
-    let check = sqlx::query("SELECT * FROM user WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users from the database")? ; 
+    let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users from the database")? ; 
     let user = check.ok_or(AppError::NotFound)? ; 
-    let password_hash:String = user.try_get("pass").context("Could not found the password in the database")? ; 
+    let password_hash:String = user.try_get("password").context("Could not found the password in the database")? ; 
+    let user_id : String= user.get("id");
     let parsed_hash = PasswordHash::new(&password_hash).map_err(|err|anyhow::anyhow!("Invalid password hash : {}",err))?; 
-    Argon2::default().verify_password(&password_hash.as_bytes(), &parsed_hash).map_err(|_|AppError::Unauthorized)?; 
+    Argon2::default().verify_password(&payload.password.as_bytes(), &parsed_hash).map_err(|_|AppError::Unauthorized)?; 
+    let exp = (Utc::now() + Duration::hours(1)).timestamp() as usize; 
+    let claims  = Claims{
+        sub:user_id,
+        exp:exp
+    };
+    let secret = env::var("JWT_SECRET").expect("Could not find the jwt key ");
+    let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(&secret.as_bytes())).map_err(|err|anyhow::anyhow!("Could not create the jwt tokens {}",err))?;
 
-    Ok(HttpResponse::Ok().json(serde_json::json!("User is verified")))
+    Ok(HttpResponse::Ok().json(serde_json::json!({"Message":"User is verified","token":token})))
     //No jwt till now 
 }
