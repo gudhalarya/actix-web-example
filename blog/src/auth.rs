@@ -1,10 +1,12 @@
-use std::env;
+use std::{env, fs::read};
 
-use actix_web::{HttpResponse, post, web};
+use actix_web::{FromRequest, HttpResponse, post, web::{self, Data}};
 use anyhow::{Context};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{EncodingKey, Header};
+use futures_util::future::{LocalBoxFuture, Ready, ready};
+use hex::decode;
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode};
 use rand_core::OsRng;
 //This is the final file we will write for this project auths 
 //First the models will be done 
@@ -30,6 +32,11 @@ pub struct Login{
 pub struct Claims{
     sub:String,
     exp:usize
+}
+
+#[derive(Debug)]
+pub struct AuthUser{
+    pub user_id : Uuid
 }
 
 #[post("/register")]
@@ -67,4 +74,42 @@ pub async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse
     let jwt_secret = env::var("JWT_SECRET").expect("Could not find the jwt secret in the env file ");
     let token = jsonwebtoken::encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_bytes())).context("Could not make the jwt token")?; 
     Ok(HttpResponse::Ok().json(serde_json::json!({"token":token})))
+}
+
+//Now the jwt extractor will be here 
+impl FromRequest for AuthUser{
+    type Error = AppError;
+    type Future = Ready<Result<Self,Self::Error>>;
+    fn from_request(req: &actix_web::HttpRequest, payload: &mut actix_web::dev::Payload) -> Self::Future {
+        let auth_header = match req.headers().get("Authorization"){
+            Some(header)=>header,
+            None=>{
+               return ready(Err(AppError::Unauthorized)); 
+            }
+        };
+        let auth_header = match auth_header.to_str(){
+            Ok(values)=>values,
+            Err(_)=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        };
+        let token = match auth_header.strip_prefix("Bearer"){
+            Some(token)=>token,
+            None=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        };
+        let secret = match env::var("JWT_SECRET"){
+            Ok(secret )=>secret,
+            Err(_)=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        };
+        let token_data =match decode::<Claims>(token, &DecodingKey::from_secret(secret), &Validation::default()){
+            Ok(data),
+            Err(_)=>{
+                return ready(Err(AppError::Unauthorized));
+            }
+        };
+    }
 }
