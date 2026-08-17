@@ -1,128 +1,70 @@
 use std::env;
 
 use actix_web::{HttpResponse, post, web};
-use anyhow::Context;
-use argon2::Argon2;
-use argon2::PasswordHash;
-use argon2::PasswordHasher;
-use argon2::PasswordVerifier;
-use argon2::password_hash::SaltString;
-use chrono::Duration;
-use chrono::Utc;
-use jsonwebtoken::EncodingKey;
-use jsonwebtoken::Header;
-use jsonwebtoken::encode;
+use anyhow::{Context};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{EncodingKey, Header};
 use rand_core::OsRng;
-
-/*This is the file for the auth stufff dude 
-1. Models  + Compelete routes will be stored here 
-2. Hashing + verification will be done in the same file Algo which will be used is ( ARGON2 )
-3.Jwt and verification + Redis maybe 
-*/
+//This is the final file we will write for this project auths 
+//First the models will be done 
 use serde::{Deserialize,Serialize};
-use sqlx::PgPool;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use crate::error::AppError; 
 
-use crate::error::AppResponse; 
-//Register models we will use
+use crate::error::{AppError, AppResponse}; 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct Register{
-    name:String,
-    email:String, 
-    password:String
+    pub name:String,
+    pub email:String,
+    pub password:String
 }
-
-//Login model is here
 
 #[derive(Debug,Deserialize,Serialize)]
 pub struct Login{
-    email:String, 
+    email:String,
     password:String
 }
 
-//This is the jwt struct here
-#[derive(Debug,Deserialize,Serialize,sqlx::FromRow)]
+#[derive(Debug,Deserialize,Serialize)]
 pub struct Claims{
     sub:String,
     exp:usize
 }
 
-//Routes start here first the register 
 #[post("/register")]
 pub async fn register(pool:web::Data<PgPool>,payload:web::Json<Register>)->AppResponse<HttpResponse>{
-    //Checking the existing users 
-    let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users from the database")? ; 
+    let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users form the database")?; 
     if check.is_some(){
-        return Err(AppError::AlreadyExist);
+        return Err(crate::error::AppError::AlreadyExist);
     }
-    //Calling the hash algo here (Argon2)......
-    let salt = SaltString::generate(&mut OsRng); 
     let argon2 = Argon2::default(); 
-    let sql = "INSERT INTO users (name,email,pass) VALUES ($1,$2,$3)";
-    let pass = argon2.hash_password(&payload.password.as_bytes(), &salt).map_err(|err|anyhow::anyhow!("Could not hash the password : {}",err))?.to_string() ; 
-    sqlx::query(sql).bind(&payload.name).bind(&payload.email).bind(pass).execute(pool.get_ref()).await.context("Could not insert the user in the database")?; 
-    Ok(HttpResponse::Created().json(serde_json::json!({"Ok":"User created successfully"})))
-    //The register route is complete 
+    let salt = SaltString::generate(&mut OsRng); 
+    
+    let hash_passwrd = argon2.hash_password(&payload.password.as_bytes(),&salt).map_err(|err|anyhow::anyhow!("Could not hash the password  {}",err))?.to_string();
+    sqlx::query("INSERT INTO users (name,email,pass) VALUES ($1,$2,$3)").bind(&payload.name).bind(&payload.email).bind(&hash_passwrd).fetch_one(pool.get_ref()).await.context("Could not insert the user in the database ")? ; 
+    Ok(HttpResponse::Created().json(serde_json::json!({"message":"Created successfully"})))
 }
 
-//This is the login route here 
+//This is the route for the login now 
 #[post("/login")]
-pub async fn login(
-    pool: web::Data<PgPool>,
-    payload: web::Json<Login>,
-) -> AppResponse<HttpResponse> {
-    let check = sqlx::query("SELECT * FROM users WHERE email = $1")
-        .bind(&payload.email)
-        .fetch_optional(pool.get_ref())
-        .await
-        .context("Could not fetch the users from the database")?;
-
+pub async fn login(pool:web::Data<PgPool>,payload:web::Json<Login>)->AppResponse<HttpResponse>{
+    let check = sqlx::query("SELECT * FROM users WHERE email = $1").bind(&payload.email).fetch_optional(pool.get_ref()).await.context("Could not fetch the users from the database")?;
     let user = check.ok_or(AppError::NotFound)?;
-
-    // pass is TEXT in PostgreSQL
-    let password_hash: String = user
-        .try_get("pass")
-        .context("Could not find the password in the database")?;
-
-    // id is UUID in PostgreSQL
-    let user_id: Uuid = user
-        .try_get("id")
-        .context("Could not find the user id in the database")?;
-
-    let parsed_hash = PasswordHash::new(&password_hash)
-        .map_err(|err| anyhow::anyhow!("Invalid password hash: {}", err))?;
-
-    Argon2::default()
-        .verify_password(
-            payload.password.as_bytes(),
-            &parsed_hash,
-        )
-        .map_err(|_| AppError::Unauthorized)?;
-
-    let exp = (Utc::now() + Duration::hours(1))
-        .timestamp() as usize;
-
-    let claims = Claims {
-        sub: user_id.to_string(),
-        exp,
-    };
-
-    let secret = env::var("JWT_SECRET")
-        .context("Could not find the JWT_SECRET")?;
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .map_err(|err| anyhow::anyhow!("Could not create the JWT token: {}", err))?;
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": "User is verified",
-        "token": token
-    })))
+    let id : Uuid = user.try_get("id").context("Could not get the user id from the database")?;
+    let pass:String = user.try_get("pass").context("Could not get the password")?;
+    //We will now verify the user
+    let parsed_hash = PasswordHash::new(&pass).map_err(|err|anyhow::anyhow!("Could not pars the hashed password : {}",err))?;
+    let argon2 = Argon2::default(); 
+    argon2.verify_password(&payload.password.as_bytes(), &parsed_hash).map_err(|_|AppError::Unauthorized)?;
+    //This is for the jwt now 
+    let exp = (Utc::now()+Duration::hours(1)).timestamp() as usize; 
+    let sub = id.to_string(); 
+    let claims = Claims{
+        sub:sub,
+        exp:exp
+    }; 
+    let jwt_secret = env::var("JWT_SECRET").expect("Could not find the jwt secret in the env file ");
+    let token = jsonwebtoken::encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_bytes())).context("Could not make the jwt token")?; 
+    Ok(HttpResponse::Ok().json(serde_json::json!({"token":token})))
 }
-//We need a fucking jwt extractor too 
-
